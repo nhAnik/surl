@@ -1,0 +1,34 @@
+version: "3"
+services:
+  api-server:
+    build:
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    depends_on:
+      - database
+      - cache
+    networks:
+      - surl-app
+  database:
+    image: postgres:14-alpine
+    ports:
+      - "5432:5432"
+    networks:
+      - surl-app
+    volumes:
+      - pg-data:/data/db
+    env_file:
+      - .env
+  cache:
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - surl-app
+networks:
+  surl-app:
+    driver: bridge
+volumes:
+  pg-data:
+    driver: local
