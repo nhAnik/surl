@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -15,13 +14,15 @@ import (
 	"github.com/nhAnik/surl/database"
 	"github.com/nhAnik/surl/models"
 	"github.com/nhAnik/surl/util"
+	"github.com/sqids/sqids-go"
 )
 
 const (
-	length      = 8
 	expiry      = 10 * time.Minute
 	serverError = "server error"
 )
+
+var chars = "1xnXM9kBN6cdYsAvjW3Co7luRePDh8ywaUQ4TStpfH0rqFVK2zimLGIJOgb5ZE"
 
 func GetSurls(w http.ResponseWriter, r *http.Request) {
 	userId, err := extractUserId(r.Context())
@@ -222,7 +223,9 @@ func ShortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Alias != "" {
+	isAliasFromUser := req.Alias != ""
+
+	if isAliasFromUser {
 		if len(req.Alias) < 5 {
 			sendErrorMsg(w, http.StatusUnprocessableEntity,
 				"alias should be at least 5 characters")
@@ -233,26 +236,19 @@ func ShortenURL(w http.ResponseWriter, r *http.Request) {
 				"alias should be at most 10 characters")
 			return
 		}
+		if existsShortURL(req.Alias) {
+			sendErrorMsg(w, http.StatusUnprocessableEntity, "alias not available")
+			return
+		}
 	}
 
 	now := time.Now().UTC()
 	surl := models.Surl{
 		URL:       req.URL,
-		ShortURL:  getRandomStr(length),
 		ExpiredAt: now.Add(expiry),
 		UpdatedAt: now,
 	}
-	if req.Alias == "" {
-		randomStr := getRandomStr(length)
-		for existsShortURL(randomStr) {
-			randomStr = getRandomStr(length)
-		}
-		surl.ShortURL = randomStr
-	} else {
-		if existsShortURL(req.Alias) {
-			sendErrorMsg(w, http.StatusUnprocessableEntity, "alias not available")
-			return
-		}
+	if isAliasFromUser {
 		surl.ShortURL = req.Alias
 		surl.IsAlias = true
 	}
@@ -275,7 +271,30 @@ func ShortenURL(w http.ResponseWriter, r *http.Request) {
 		sendInternalServerError(w)
 		return
 	}
+	if !isAliasFromUser {
+		// No user given alias, generate one from the id of the inserted row
+		URLHash, err := getSurlFromID(surl.ID)
+		if err != nil {
+			sendInternalServerError(w)
+			return
+		}
+		surl.ShortURL = URLHash
+		updateSql := "UPDATE url_table SET short_url = $1 WHERE id = $2"
+		if _, err := database.DB.Exec(updateSql, surl.ShortURL, surl.ID); err != nil {
+			sendInternalServerError(w)
+			return
+		}
+	}
 	sendOkJsonResponse(w, surl)
+}
+
+func getSurlFromID(id int64) (string, error) {
+	var length = 8
+	s, _ := sqids.NewCustom(sqids.Options{
+		MinLength: &length,
+		Alphabet:  &chars,
+	})
+	return s.Encode([]uint64{uint64(id)})
 }
 
 func extractUserId(ctx context.Context) (int64, error) {
@@ -294,16 +313,6 @@ func existsShortURL(surl string) bool {
 		return false
 	}
 	return true
-}
-
-var chars = []rune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-func getRandomStr(n int) string {
-	str := make([]rune, n)
-	for i := 0; i < n; i++ {
-		str[i] = chars[rand.Intn(len(chars))]
-	}
-	return string(str)
 }
 
 func sendInternalServerError(w http.ResponseWriter) {
