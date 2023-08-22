@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,9 +12,9 @@ import (
 	"github.com/asaskevich/govalidator"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
-	"github.com/nhAnik/surl/database"
 	"github.com/nhAnik/surl/models"
 	"github.com/nhAnik/surl/util"
+	"github.com/redis/go-redis/v9"
 	"github.com/sqids/sqids-go"
 )
 
@@ -24,7 +25,21 @@ const (
 
 var chars = "1xnXM9kBN6cdYsAvjW3Co7luRePDh8ywaUQ4TStpfH0rqFVK2zimLGIJOgb5ZE"
 
-func GetSurls(w http.ResponseWriter, r *http.Request) {
+type SurlHandler struct {
+	db          *sql.DB
+	redisClient *redis.Client
+	sqid        *sqids.Sqids
+}
+
+func NewSurlHandler(DB *sql.DB, rc *redis.Client, s *sqids.Sqids) *SurlHandler {
+	return &SurlHandler{
+		db:          DB,
+		redisClient: rc,
+		sqid:        s,
+	}
+}
+
+func (s *SurlHandler) GetSurls(w http.ResponseWriter, r *http.Request) {
 	userId, err := extractUserId(r.Context())
 	if err != nil {
 		sendInternalServerError(w)
@@ -32,7 +47,7 @@ func GetSurls(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sql := "SELECT id, short_url, url, expired_at, updated_at, clicked FROM url_table WHERE user_id = $1"
-	rows, err := database.DB.Query(sql, userId)
+	rows, err := s.db.Query(sql, userId)
 	if err != nil {
 		sendInternalServerError(w)
 		return
@@ -55,7 +70,7 @@ func GetSurls(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func GetSurl(w http.ResponseWriter, r *http.Request) {
+func (s *SurlHandler) GetSurl(w http.ResponseWriter, r *http.Request) {
 	curUserId, err := extractUserId(r.Context())
 	if err != nil {
 		sendInternalServerError(w)
@@ -64,7 +79,7 @@ func GetSurl(w http.ResponseWriter, r *http.Request) {
 	urlId := mux.Vars(r)["id"]
 	var surl models.Surl
 	var userId int64
-	surl, userId, err = GetSurlById(urlId)
+	surl, userId, err = getSurlById(s.db, urlId)
 	if err != nil {
 		sendJsonResponse(w, http.StatusNotFound, responseMap{
 			"message": "url not found",
@@ -80,19 +95,19 @@ func GetSurl(w http.ResponseWriter, r *http.Request) {
 	sendOkJsonResponse(w, surl)
 }
 
-func GetSurlById(urlId string) (models.Surl, int64, error) {
+func getSurlById(DB *sql.DB, urlId string) (models.Surl, int64, error) {
 	sql := `SELECT id, short_url, url, expired_at, updated_at, clicked, user_id FROM url_table WHERE id = $1`
 
 	var surl models.Surl
 	var userId int64
-	if err := database.DB.QueryRow(sql, urlId).Scan(
+	if err := DB.QueryRow(sql, urlId).Scan(
 		&surl.ID, &surl.ShortURL, &surl.URL, &surl.ExpiredAt, &surl.UpdatedAt, &surl.Clicked, &userId); err != nil {
 		return surl, 0, err
 	}
 	return surl, userId, nil
 }
 
-func DeleteSurl(w http.ResponseWriter, r *http.Request) {
+func (s *SurlHandler) DeleteSurl(w http.ResponseWriter, r *http.Request) {
 	curUserId, err := extractUserId(r.Context())
 	if err != nil {
 		sendInternalServerError(w)
@@ -100,7 +115,7 @@ func DeleteSurl(w http.ResponseWriter, r *http.Request) {
 	}
 	urlId := mux.Vars(r)["id"]
 	var userId int64
-	if err = database.DB.QueryRow(`SELECT user_id FROM url_table WHERE id = $1`, urlId).
+	if err = s.db.QueryRow(`SELECT user_id FROM url_table WHERE id = $1`, urlId).
 		Scan(&userId); err != nil {
 		sendJsonResponse(w, http.StatusNotFound, responseMap{
 			"message": "url not found",
@@ -113,7 +128,7 @@ func DeleteSurl(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deleteSql := `DELETE FROM url_table WHERE id = $1`
-	if _, err := database.DB.Exec(deleteSql, urlId); err != nil {
+	if _, err := s.db.Exec(deleteSql, urlId); err != nil {
 		sendInternalServerError(w)
 		return
 	}
@@ -122,7 +137,7 @@ func DeleteSurl(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func UpdateSurl(w http.ResponseWriter, r *http.Request) {
+func (s *SurlHandler) UpdateSurl(w http.ResponseWriter, r *http.Request) {
 	curUserId, err := extractUserId(r.Context())
 	if err != nil {
 		sendInternalServerError(w)
@@ -132,7 +147,7 @@ func UpdateSurl(w http.ResponseWriter, r *http.Request) {
 
 	var surl models.Surl
 	var userId int64
-	surl, userId, err = GetSurlById(urlId)
+	surl, userId, err = getSurlById(s.db, urlId)
 	if err != nil {
 		sendErrorMsg(w, http.StatusNotFound, "url not found")
 		return
@@ -161,7 +176,7 @@ func UpdateSurl(w http.ResponseWriter, r *http.Request) {
 			"alias should be at most 10 characters")
 		return
 	}
-	if existsShortURL(req.Alias) {
+	if existsShortURL(s.db, req.Alias) {
 		sendErrorMsg(w, http.StatusUnprocessableEntity, "alias not available")
 		return
 	}
@@ -171,7 +186,7 @@ func UpdateSurl(w http.ResponseWriter, r *http.Request) {
 
 	updateSql := `UPDATE url_table SET short_url = $1, expired_at = $2, updated_at = $3, is_alias = $4
 		WHERE id = $5`
-	if _, err := database.DB.Exec(updateSql, req.Alias, expiredAt, now, true, urlId); err != nil {
+	if _, err := s.db.Exec(updateSql, req.Alias, expiredAt, now, true, urlId); err != nil {
 		sendInternalServerError(w)
 		return
 	}
@@ -182,7 +197,7 @@ func UpdateSurl(w http.ResponseWriter, r *http.Request) {
 	sendOkJsonResponse(w, surl)
 }
 
-func ResolveURL(w http.ResponseWriter, r *http.Request) {
+func (s *SurlHandler) ResolveURL(w http.ResponseWriter, r *http.Request) {
 	surl := mux.Vars(r)["url"]
 
 	sql := "SELECT url, expired_at, clicked FROM url_table WHERE short_url = $1"
@@ -191,7 +206,7 @@ func ResolveURL(w http.ResponseWriter, r *http.Request) {
 		clicked   uint64
 		expiredAt time.Time
 	)
-	if err := database.DB.QueryRow(sql, surl).Scan(&longUrl, &expiredAt, &clicked); err != nil {
+	if err := s.db.QueryRow(sql, surl).Scan(&longUrl, &expiredAt, &clicked); err != nil {
 		sendErrorMsg(w, http.StatusNotFound, surl+" not found")
 		return
 	}
@@ -200,14 +215,14 @@ func ResolveURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	update := "UPDATE url_table SET clicked = $1 + 1 WHERE short_url = $2"
-	if _, err := database.DB.Exec(update, clicked, surl); err != nil {
+	if _, err := s.db.Exec(update, clicked, surl); err != nil {
 		sendInternalServerError(w)
 		return
 	}
 	http.Redirect(w, r, longUrl, http.StatusTemporaryRedirect)
 }
 
-func ShortenURL(w http.ResponseWriter, r *http.Request) {
+func (s *SurlHandler) ShortenURL(w http.ResponseWriter, r *http.Request) {
 	type surlRequest struct {
 		URL   string `json:"url"`
 		Alias string `json:"alias"`
@@ -236,7 +251,7 @@ func ShortenURL(w http.ResponseWriter, r *http.Request) {
 				"alias should be at most 10 characters")
 			return
 		}
-		if existsShortURL(req.Alias) {
+		if existsShortURL(s.db, req.Alias) {
 			sendErrorMsg(w, http.StatusUnprocessableEntity, "alias not available")
 			return
 		}
@@ -266,7 +281,7 @@ func ShortenURL(w http.ResponseWriter, r *http.Request) {
 
 	sql := `INSERT INTO url_table (url, short_url, clicked, is_alias, expired_at, updated_at, user_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`
-	if err := database.DB.QueryRow(sql, longUrl, surl.ShortURL, surl.Clicked, surl.IsAlias,
+	if err := s.db.QueryRow(sql, longUrl, surl.ShortURL, surl.Clicked, surl.IsAlias,
 		surl.ExpiredAt, surl.UpdatedAt, userId).Scan(&surl.ID); err != nil {
 		sendInternalServerError(w)
 		return
@@ -280,7 +295,7 @@ func ShortenURL(w http.ResponseWriter, r *http.Request) {
 		}
 		surl.ShortURL = URLHash
 		updateSql := "UPDATE url_table SET short_url = $1 WHERE id = $2"
-		if _, err := database.DB.Exec(updateSql, surl.ShortURL, surl.ID); err != nil {
+		if _, err := s.db.Exec(updateSql, surl.ShortURL, surl.ID); err != nil {
 			sendInternalServerError(w)
 			return
 		}
@@ -306,10 +321,10 @@ func extractUserId(ctx context.Context) (int64, error) {
 	return 0, errors.New("id not found")
 }
 
-func existsShortURL(surl string) bool {
+func existsShortURL(DB *sql.DB, surl string) bool {
 	var id int64
 	sql := "SELECT id FROM url_table WHERE short_url = $1"
-	if err := database.DB.QueryRow(sql, surl).Scan(&id); err != nil {
+	if err := DB.QueryRow(sql, surl).Scan(&id); err != nil {
 		return false
 	}
 	return true

@@ -9,9 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var RedisClient *redis.Client
-
-func ConnectRedis() {
+func InitRedis() (*redis.Client, error) {
 	dbNumber, _ := strconv.Atoi(os.Getenv("REDIS_DB"))
 
 	options := &redis.Options{
@@ -19,9 +17,10 @@ func ConnectRedis() {
 		Password: os.Getenv("REDIS_PWD"),
 		DB:       dbNumber,
 	}
-	RedisClient = redis.NewClient(options)
-	if err := RedisClient.Ping(context.Background()).Err(); err != nil {
-		panic(err)
+	client := redis.NewClient(options)
+	if err := client.Ping(context.Background()).Err(); err != nil {
+		return nil, err
 	}
 	log.Println("redis connection successful")
+	return client, nil
 }
