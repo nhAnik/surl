@@ -1,0 +1,4 @@
+
+DROP TABLE IF EXISTS url_table;
+
+DROP TABLE IF EXISTS user_table;
