@@ -7,7 +7,7 @@
 git clone https://github.com/nhAnik/surl.git
 cd surl
 ```
-2. Build and run multi using `docker compose`
+2. Build and run using `docker compose`
 ```bash
 docker compose build
 docker compose up
