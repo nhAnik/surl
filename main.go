@@ -24,9 +24,9 @@ func setRoutes(r *mux.Router, ah *handlers.AuthHandler, sh *handlers.SurlHandler
 
 	v1.HandleFunc("", middleware.Jwt(sh.ShortenURL)).Methods(http.MethodPost)
 	v1.HandleFunc("/urls", middleware.Jwt(sh.GetSurls)).Methods(http.MethodGet)
-	v1.HandleFunc("/urls/:id", middleware.Jwt(sh.GetSurl)).Methods(http.MethodGet)
-	v1.HandleFunc("/urls/:id", middleware.Jwt(sh.DeleteSurl)).Methods(http.MethodDelete)
-	v1.HandleFunc("/urls/:id", middleware.Jwt(sh.UpdateSurl)).Methods(http.MethodPut)
+	v1.HandleFunc("/urls/{id:[0-9]+}", middleware.Jwt(sh.GetSurl)).Methods(http.MethodGet)
+	v1.HandleFunc("/urls/{id:[0-9]+}", middleware.Jwt(sh.DeleteSurl)).Methods(http.MethodDelete)
+	v1.HandleFunc("/urls/{id:[0-9]+}", middleware.Jwt(sh.UpdateSurl)).Methods(http.MethodPut)
 }
 
 func main() {
