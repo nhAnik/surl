@@ -119,11 +119,13 @@ func (s *SurlHandler) DeleteSurl(w http.ResponseWriter, r *http.Request) {
 		sendJsonResponse(w, http.StatusNotFound, responseMap{
 			"message": "url not found",
 		})
+		return
 	}
 	if curUserId != userId {
 		sendJsonResponse(w, http.StatusUnauthorized, responseMap{
 			"message": "authorization failure",
 		})
+		return
 	}
 
 	deleteSql := `DELETE FROM url_table WHERE id = $1`
