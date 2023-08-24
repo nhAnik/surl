@@ -15,6 +15,5 @@ CREATE TABLE IF NOT EXISTS url_table(
     is_alias BOOLEAN NOT NULL,
     clicked INTEGER NOT NULL,
     updated_at TIMESTAMP NOT NULL,
-    expired_at TIMESTAMP NOT NULL,
     user_id INTEGER REFERENCES user_table(id)
 );

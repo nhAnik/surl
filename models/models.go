@@ -8,7 +8,6 @@ type Surl struct {
 	ShortURL  string    `json:"short_url"`
 	Clicked   uint64    `json:"clicked"`
 	IsAlias   bool      `json:"is_alias"`
-	ExpiredAt time.Time `json:"expired_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 

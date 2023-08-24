@@ -19,7 +19,6 @@ import (
 )
 
 const (
-	expiry      = 10 * time.Minute
 	serverError = "server error"
 )
 
@@ -46,7 +45,7 @@ func (s *SurlHandler) GetSurls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sql := "SELECT id, short_url, url, expired_at, updated_at, clicked FROM url_table WHERE user_id = $1"
+	sql := "SELECT id, short_url, url, updated_at, clicked FROM url_table WHERE user_id = $1"
 	rows, err := s.db.Query(sql, userId)
 	if err != nil {
 		sendInternalServerError(w)
@@ -58,7 +57,7 @@ func (s *SurlHandler) GetSurls(w http.ResponseWriter, r *http.Request) {
 	var surlList []models.Surl
 	for rows.Next() {
 		var surl models.Surl
-		err = rows.Scan(&surl.ID, &surl.ShortURL, &surl.URL, &surl.ExpiredAt, &surl.UpdatedAt, &surl.Clicked)
+		err = rows.Scan(&surl.ID, &surl.ShortURL, &surl.URL, &surl.UpdatedAt, &surl.Clicked)
 		if err != nil {
 			sendInternalServerError(w)
 			return
@@ -96,12 +95,12 @@ func (s *SurlHandler) GetSurl(w http.ResponseWriter, r *http.Request) {
 }
 
 func getSurlById(DB *sql.DB, urlId string) (models.Surl, int64, error) {
-	sql := `SELECT id, short_url, url, expired_at, updated_at, clicked, user_id FROM url_table WHERE id = $1`
+	sql := `SELECT id, short_url, url, updated_at, clicked, user_id FROM url_table WHERE id = $1`
 
 	var surl models.Surl
 	var userId int64
 	if err := DB.QueryRow(sql, urlId).Scan(
-		&surl.ID, &surl.ShortURL, &surl.URL, &surl.ExpiredAt, &surl.UpdatedAt, &surl.Clicked, &userId); err != nil {
+		&surl.ID, &surl.ShortURL, &surl.URL, &surl.UpdatedAt, &surl.Clicked, &userId); err != nil {
 		return surl, 0, err
 	}
 	return surl, userId, nil
@@ -182,38 +181,31 @@ func (s *SurlHandler) UpdateSurl(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
-	expiredAt := now.Add(expiry)
-
-	updateSql := `UPDATE url_table SET short_url = $1, expired_at = $2, updated_at = $3, is_alias = $4
-		WHERE id = $5`
-	if _, err := s.db.Exec(updateSql, req.Alias, expiredAt, now, true, urlId); err != nil {
+	updateSql := `UPDATE url_table SET short_url = $1, updated_at = $2, is_alias = $3
+		WHERE id = $4`
+	if _, err := s.db.Exec(updateSql, req.Alias, now, true, urlId); err != nil {
 		sendInternalServerError(w)
 		return
 	}
 	surl.ShortURL = req.Alias
 	surl.IsAlias = true
 	surl.UpdatedAt = now
-	surl.ExpiredAt = expiredAt
 	sendOkJsonResponse(w, surl)
 }
 
 func (s *SurlHandler) ResolveURL(w http.ResponseWriter, r *http.Request) {
 	surl := mux.Vars(r)["url"]
 
-	sql := "SELECT url, expired_at, clicked FROM url_table WHERE short_url = $1"
 	var (
-		longUrl   string
-		clicked   uint64
-		expiredAt time.Time
+		longUrl string
+		clicked uint64
 	)
-	if err := s.db.QueryRow(sql, surl).Scan(&longUrl, &expiredAt, &clicked); err != nil {
+	sql := "SELECT url, clicked FROM url_table WHERE short_url = $1"
+	if err := s.db.QueryRow(sql, surl).Scan(&longUrl, &clicked); err != nil {
 		sendErrorMsg(w, http.StatusNotFound, surl+" not found")
 		return
 	}
-	if expiredAt.Before(time.Now().UTC()) {
-		sendErrorMsg(w, http.StatusNotFound, surl+" expired")
-		return
-	}
+
 	update := "UPDATE url_table SET clicked = $1 + 1 WHERE short_url = $2"
 	if _, err := s.db.Exec(update, clicked, surl); err != nil {
 		sendInternalServerError(w)
@@ -260,7 +252,6 @@ func (s *SurlHandler) ShortenURL(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	surl := models.Surl{
 		URL:       req.URL,
-		ExpiredAt: now.Add(expiry),
 		UpdatedAt: now,
 	}
 	if isAliasFromUser {
@@ -279,10 +270,10 @@ func (s *SurlHandler) ShortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sql := `INSERT INTO url_table (url, short_url, clicked, is_alias, expired_at, updated_at, user_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`
+	sql := `INSERT INTO url_table (url, short_url, clicked, is_alias, updated_at, user_id)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
 	if err := s.db.QueryRow(sql, longUrl, surl.ShortURL, surl.Clicked, surl.IsAlias,
-		surl.ExpiredAt, surl.UpdatedAt, userId).Scan(&surl.ID); err != nil {
+		surl.UpdatedAt, userId).Scan(&surl.ID); err != nil {
 		sendInternalServerError(w)
 		return
 	}
