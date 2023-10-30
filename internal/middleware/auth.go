@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/nhAnik/surl/util"
+	"github.com/nhAnik/surl/internal/util"
 )
 
 func Jwt(next http.HandlerFunc) http.HandlerFunc {

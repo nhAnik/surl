@@ -7,10 +7,10 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
-	"github.com/nhAnik/surl/database"
-	"github.com/nhAnik/surl/handlers"
-	"github.com/nhAnik/surl/middleware"
-	"github.com/nhAnik/surl/util"
+	"github.com/nhAnik/surl/internal/database"
+	"github.com/nhAnik/surl/internal/handlers"
+	"github.com/nhAnik/surl/internal/middleware"
+	"github.com/nhAnik/surl/internal/util"
 )
 
 func setRoutes(r *mux.Router, ah *handlers.AuthHandler, sh *handlers.SurlHandler) {

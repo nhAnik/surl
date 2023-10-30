@@ -12,8 +12,8 @@ import (
 	"github.com/asaskevich/govalidator"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
-	"github.com/nhAnik/surl/models"
-	"github.com/nhAnik/surl/util"
+	"github.com/nhAnik/surl/internal/models"
+	"github.com/nhAnik/surl/internal/util"
 	"github.com/redis/go-redis/v9"
 	"github.com/sqids/sqids-go"
 )

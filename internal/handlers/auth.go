@@ -13,7 +13,7 @@ import (
 	"github.com/asaskevich/govalidator"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/nhAnik/surl/models"
+	"github.com/nhAnik/surl/internal/models"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 )
