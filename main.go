@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/gorilla/mux"
-	"github.com/joho/godotenv"
 	"github.com/nhAnik/surl/internal/database"
 	"github.com/nhAnik/surl/internal/handlers"
 	"github.com/nhAnik/surl/internal/middleware"
@@ -30,10 +29,6 @@ func setRoutes(r *mux.Router, ah *handlers.AuthHandler, sh *handlers.SurlHandler
 }
 
 func main() {
-	if err := godotenv.Load(); err != nil {
-		log.Println(err)
-	}
-
 	DB, err := database.InitDB()
 	if err != nil {
 		panic(err)
